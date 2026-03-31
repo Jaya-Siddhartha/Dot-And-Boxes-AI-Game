@@ -604,6 +604,7 @@ class PlaySection {
     this.log              = [];
     this.gameOverShown    = false;
     this.pollTimer        = null;
+    this.hasStarted       = false;
     this._wsHandler  = null;
     this._wsMetrics  = null;
     this._wsGameOver = null;
@@ -743,7 +744,6 @@ class PlaySection {
 
     // Wire up events
     this._wire(prefix);
-    this._startGame();
   }
 
   _wire(prefix) {
@@ -828,6 +828,7 @@ class PlaySection {
         mode:     this.mode,
         strategy: this.strategy,
       }, { sessionId: this.sessionId });
+      this.hasStarted = true;
       const state = await API.get('/state', { sessionId: this.sessionId });
       this._onState(state, prefix);
       this._addLog('sys', '⬡ New game started');
@@ -1518,6 +1519,9 @@ const App = {
       PlaySections.mm.stopPolling();
       PlaySections.ab?.stopPolling();
       AiVsAi.stopPolling();
+      if (!PlaySections.mm.hasStarted) {
+        PlaySections.mm._startGame();
+      }
       return;
     }
     if (section === 'play-alphabeta' && PlaySections.ab) {
@@ -1525,6 +1529,9 @@ const App = {
       PlaySections.ab.stopPolling();
       PlaySections.mm?.stopPolling();
       AiVsAi.stopPolling();
+      if (!PlaySections.ab.hasStarted) {
+        PlaySections.ab._startGame();
+      }
       return;
     }
     if (section === 'aivai') {
