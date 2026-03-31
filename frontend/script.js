@@ -822,14 +822,14 @@ class PlaySection {
     if (aiAvatar) aiAvatar.textContent = this.mode === 'hvh' ? 'P2' : 'AI';
 
     try {
-      await API.post('/start-game', {
+      const res = await API.post('/start-game', {
         rows:     this.rows,
         cols:     this.cols,
         mode:     this.mode,
         strategy: this.strategy,
       }, { sessionId: this.sessionId });
       this.hasStarted = true;
-      const state = await API.get('/state', { sessionId: this.sessionId });
+      const state = res.state || await API.get('/state', { sessionId: this.sessionId });
       this._onState(state, prefix);
       this._addLog('sys', '⬡ New game started');
     } catch (e) {
@@ -844,9 +844,9 @@ class PlaySection {
     this.aiRequestInFlight = false;
     this.gameOverShown = false;
     try {
-      await API.post('/reset', {}, { sessionId: this.sessionId });
+      const res = await API.post('/reset', {}, { sessionId: this.sessionId });
       const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
-      const state = await API.get('/state', { sessionId: this.sessionId });
+      const state = res.state || await API.get('/state', { sessionId: this.sessionId });
       this._onState(state, prefix);
       this._addLog('sys', '↺ Board reset');
     } catch (e) {
@@ -943,11 +943,10 @@ class PlaySection {
   async _onHumanMove(type, r, c) {
     if (this.aiLocked) return;
     try {
-      await API.post('/move', { m_type: type, r, c }, { sessionId: this.sessionId });
-      if (IS_VERCEL_HOST) {
+      const res = await API.post('/move', { m_type: type, r, c }, { sessionId: this.sessionId });
+      if (res.state) {
         const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
-        const state = await API.get('/state', { sessionId: this.sessionId });
-        this._onState(state, prefix);
+        this._onState(res.state, prefix);
       }
       this._addLog(1, `P1 drew ${type.toUpperCase()} line at (${r},${c})`);
       if (this.board) this.board.clearSuggestion();
@@ -974,9 +973,8 @@ class PlaySection {
         depth:      this.depth,
         difficulty: _diff,
       }, { sessionId: this.sessionId });
-      if (IS_VERCEL_HOST) {
-        const state = await API.get('/state', { sessionId: this.sessionId });
-        this._onState(state, prefix);
+      if (res.state) {
+        this._onState(res.state, prefix);
       }
       if (res.metrics) {
         this._onMetrics(res.metrics, prefix);
@@ -1007,7 +1005,7 @@ class PlaySection {
               $(`section-play-${this.strategy}`).classList.contains('active')) {
             this._triggerAI();
           }
-        }, 200); // Snappier chaining
+        }, 60); // Keep chained AI turns feeling responsive
       } else {
         this.aiLocked = false;
       }
@@ -1126,11 +1124,10 @@ const AiVsAi = {
     ChartMgr.resetHistoryChart();
 
     // Start fresh game first
-    await API.post('/start-game', { rows, cols, mode: 'aivai', strategy: `${strat1}_vs_${strat2}` }, { sessionId: this.sessionId });
-    try {
-      const state = await API.get('/state', { sessionId: this.sessionId });
-      this._onState(state);
-    } catch {}
+    const startRes = await API.post('/start-game', { rows, cols, mode: 'aivai', strategy: `${strat1}_vs_${strat2}` }, { sessionId: this.sessionId });
+    if (startRes.state) {
+      this._onState(startRes.state);
+    }
 
     try {
       await API.post('/ai-vs-ai', { strat1, strat2, depth, delay, rows, cols }, { sessionId: this.sessionId });
@@ -1145,11 +1142,10 @@ const AiVsAi = {
   async reset() {
     try {
       Modal.hide();
-      await API.post('/reset', {}, { sessionId: this.sessionId });
-      try {
-        const state = await API.get('/state', { sessionId: this.sessionId });
-        this._onState(state);
-      } catch {}
+      const res = await API.post('/reset', {}, { sessionId: this.sessionId });
+      if (res.state) {
+        this._onState(res.state);
+      }
       $('aivai-score1').textContent = '0';
       $('aivai-score2').textContent = '0';
       $('aivai-log').innerHTML = '';

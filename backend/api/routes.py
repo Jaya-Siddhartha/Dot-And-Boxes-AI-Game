@@ -12,6 +12,7 @@ Key production-oriented improvement:
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Optional
 
@@ -41,7 +42,8 @@ session_manager = SessionManager()
 qlearner = QLearner()
 fairness_ctrl = FairnessController()
 
-_AI_TIMEOUT_SECONDS = 10.0
+_IS_VERCEL = bool(os.getenv("VERCEL"))
+_AI_TIMEOUT_SECONDS = 6.0 if _IS_VERCEL else 10.0
 _DEPTH_MAP = {
     1: DIFFICULTY_EASY,
     2: DIFFICULTY_MEDIUM,
@@ -119,6 +121,19 @@ def _winner_for_state(state: GameState) -> int:
     s = state.scores
     p1, p2 = s.get(1, 0), s.get(2, 0)
     return 1 if p1 > p2 else (2 if p2 > p1 else 0)
+
+
+def _effective_depth(state: GameState, requested_depth: int, difficulty: str) -> int:
+    depth = max(1, min(int(requested_depth or get_depth_for_difficulty(difficulty)), 6))
+    if not _IS_VERCEL:
+        return depth
+
+    remaining_moves = len(state.get_valid_moves())
+    if remaining_moves >= 28:
+        return min(depth, 2)
+    if remaining_moves >= 16:
+        return min(depth, 3)
+    return min(depth, 4)
 
 
 async def _persist_finished_game(snapshot: dict) -> None:
@@ -224,6 +239,7 @@ async def start_game(req: StartGameReq, session_id: Optional[str] = Query(defaul
             "strategy": req.strategy,
             "difficulty": req.difficulty,
             "session_id": session.session_id,
+            "state": session.game_state.get_state_dict(),
         }
 
 
@@ -239,7 +255,11 @@ async def reset_game(session_id: Optional[str] = Query(default=None)):
         meta["started_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         meta["game_saved"] = False
         await push_state(session)
-        return {"status": "success", "session_id": session.session_id}
+        return {
+            "status": "success",
+            "session_id": session.session_id,
+            "state": session.game_state.get_state_dict(),
+        }
 
 
 @router.post("/move")
@@ -270,7 +290,7 @@ async def human_move(move: MoveReq, session_id: Optional[str] = Query(default=No
             await push_state(session)
             if state.is_game_over:
                 await _end_game(session)
-            return {"status": "success"}
+            return {"status": "success", "state": state.get_state_dict()}
         except (InvalidMoveError, GameStateError) as e:
             return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
         except Exception as e:
@@ -292,7 +312,7 @@ async def ai_move(req: AIMoveReq, session_id: Optional[str] = Query(default=None
             return JSONResponse(status_code=400, content={"status": "error", "message": "No valid moves."})
 
         difficulty = req.difficulty or _DEPTH_MAP.get(req.depth, DIFFICULTY_HARD)
-        depth = max(1, min(int(req.depth or get_depth_for_difficulty(difficulty)), 6))
+        depth = _effective_depth(state, req.depth, difficulty)
         ai = create_strategy(req.strategy, difficulty, qlearner=qlearner)
 
         state_key_before = qlearner.get_state_key(state)
@@ -375,7 +395,13 @@ async def ai_move(req: AIMoveReq, session_id: Optional[str] = Query(default=None
         await push_state(session)
         if state.is_game_over:
             await _end_game(session)
-        return {"status": "success", "move": best_move, "metrics": metrics}
+        return {
+            "status": "success",
+            "move": best_move,
+            "metrics": metrics,
+            "state": state.get_state_dict(),
+            "depth_used": depth,
+        }
 
 
 @router.post("/ai-vs-ai")
@@ -409,8 +435,9 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
                         state_clone = state.clone()
 
                     try:
+                        search_depth = _effective_depth(state_clone, req.depth, DIFFICULTY_HARD)
                         move, _, met = await asyncio.wait_for(
-                            asyncio.to_thread(ai.compute_move, state_clone, req.depth),
+                            asyncio.to_thread(ai.compute_move, state_clone, search_depth),
                             timeout=_AI_TIMEOUT_SECONDS,
                         )
                     except asyncio.TimeoutError:
@@ -492,6 +519,7 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
             "message": "AI vs AI game running.",
             "grid": f"{rows}x{cols}",
             "session_id": session.session_id,
+            "state": session.game_state.get_state_dict(),
         }
 
 
