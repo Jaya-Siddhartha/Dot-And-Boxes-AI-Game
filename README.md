@@ -2,38 +2,58 @@
 
 Full-stack Dots & Boxes game built with FastAPI, vanilla JavaScript, SQLite, and multiple AI strategies.
 
-This project supports:
+The project supports:
 - Human vs Human
 - Human vs AI
 - AI vs AI
-- Algorithm comparison and game history
+- Algorithm comparison
+- Game history and replay
+- Session-isolated live gameplay for multiple concurrent users
 
-It has been updated to isolate live gameplay per browser session, so multiple users can use the app at the same time on one deployed server process without sharing the same board state.
+## Screenshots
 
-## What Changed
+### Dashboard
+![Dashboard](docs/screenshots/dashboard.png)
 
-Recent updates in this codebase:
-- Fixed broken game-over popup behavior
-- Reduced end-of-game UI latency by pushing result events before persistence work
-- Fixed strategy selection so low difficulty no longer silently downgrades to random play
-- Made frontend depth selection map more predictably to backend AI search
-- Added per-session live game isolation for concurrent users
-- Scoped WebSocket updates per user session instead of broadcasting one shared board to everyone
+### Play Minimax
+![Play Minimax](docs/screenshots/play-minimax.png)
+
+### AI vs AI
+![AI vs AI](docs/screenshots/ai-vs-ai.png)
+
+## Live Demo
+
+- Production: [https://dot-and-boxes-ai-game.vercel.app](https://dot-and-boxes-ai-game.vercel.app)
+- Repository: [https://github.com/senapathiyaswanth/Dot-And-Boxes-AI-Game](https://github.com/senapathiyaswanth/Dot-And-Boxes-AI-Game)
+
+## Highlights
+
+- Per-session game isolation so different users do not share the same board
+- Minimax, Alpha-Beta, and Adaptive AI strategies
+- Faster Vercel runtime behavior with hosted-specific tuning
+- Reduced end-of-game latency and improved game-over modal handling
+- AI-vs-AI speed controls with faster hosted defaults
+- History and replay for completed games
 
 ## Current Architecture
 
 ### Frontend
+
+Core files:
 - `frontend/index.html`
 - `frontend/script.js`
 - `frontend/styles.css`
 
-The frontend is a vanilla JS single-page app. Each browser stores a stable `session_id` in `localStorage` and sends it with:
-- all REST API requests
-- the WebSocket connection
-
-That session id is what keeps one user's game separate from another user's game.
+Frontend responsibilities:
+- render the single-page interface
+- manage section navigation
+- send a stable browser-scoped `session_id` with live gameplay requests
+- render boards, scores, AI metrics, history, and game-over modal
+- use polling fallback on Vercel where WebSockets are not relied on
 
 ### Backend
+
+Core files:
 - `backend/app.py`
 - `backend/api/routes.py`
 - `backend/session_manager.py`
@@ -43,87 +63,133 @@ That session id is what keeps one user's game separate from another user's game.
 - `backend/learning/qlearning.py`
 - `backend/database/db.py`
 
-The backend is FastAPI-based and uses:
-- in-memory per-session live game state
-- SQLite for persistent history and stats
-- a shared Q-learning data file for learning progress
+Backend responsibilities:
+- keep live game state isolated per session
+- run Minimax, Alpha-Beta, and Adaptive AI turns
+- manage AI-vs-AI background tasks
+- store completed game history in SQLite
+- persist Q-learning data
 
-## Multi-User Behavior
+## Multi-User Model
 
-### Safe Right Now
+This project is now safe for multiple simultaneous users on a single running app instance.
 
-The app now supports multiple simultaneous users on the same running server process because:
-- each session has its own `GameState`
-- each session has its own async lock
-- each session has its own AI-vs-AI task
-- each session has its own WebSocket subscriber list
+Each live session gets:
+- its own `GameState`
+- its own async lock
+- its own AI-vs-AI task
+- its own state version
+- its own WebSocket/polling scope
 
-This means:
-- User A can start a `3x3` game
-- User B can start a `5x5` game
-- User A's moves do not affect User B's board
-- real-time state updates only go to the matching session
+This prevents one user's moves or board resets from affecting another user's game.
+
+## Deployment Notes
+
+### Localhost
+
+Localhost gives the best parity for the full experience because the app can behave like a single long-lived server.
+
+Run with:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
+```
+
+Open:
+
+- `http://127.0.0.1:8000`
+- `http://localhost:8000`
+
+### Vercel
+
+The project is deployed successfully on Vercel, but the runtime is tuned differently from localhost.
+
+Hosted adjustments include:
+- no dependency on WebSocket live updates
+- state-response fast path to avoid extra round trips
+- reduced AI-vs-AI pacing delay
+- Vercel-specific AI depth caps for responsiveness
+- async persistence after game completion to avoid blocking the modal path
+
+These changes are there to make the hosted version feel responsive within a serverless environment.
 
 ### Important Limitation
 
-Live session state is still in memory.
+Live sessions are still in memory.
 
-That means this version is suitable for:
-- localhost use
-- demo deployments
-- single-server deployments
-- one-process hosting
+This means the project is good for:
+- localhost
+- demos
+- one running app instance
+- single-instance hosting
 
-It is not yet sufficient for:
-- horizontal scaling across multiple app instances
-- load-balanced production clusters
-- crash-safe live session recovery after process restart
+It is not yet the final architecture for:
+- multiple app instances behind load balancing
+- crash-safe live session recovery
+- large-scale production clusters
 
-If the server restarts, live games in memory are lost. Saved history in SQLite remains.
+For that, the next step would be Redis or another shared live state layer.
 
 ## AI Strategies
 
 ### Minimax
-- full search without pruning
-- useful for learning and comparison
+
+- full adversarial search
 - slower than Alpha-Beta
+- useful for comparison and educational visibility
 
 ### Alpha-Beta
+
 - pruned search
-- faster than Minimax
-- better default for interactive use
+- much better for interactive play
+- best default for responsive hosted turns
 
 ### Adaptive AI
-- Alpha-Beta plus Q-learning feedback
-- uses learned values to influence move selection
 
-### Difficulty and Depth
+- Alpha-Beta plus Q-learning influence
+- reuses learned move values while keeping tree-search guidance
 
-The code now respects the selected strategy more faithfully.
+## Performance Improvements Already Applied
 
-Important behavior:
-- chosen strategy remains the chosen strategy
-- low difficulty no longer replaces Minimax or Alpha-Beta with random behavior
-- UI depth is now used more directly for search depth in interactive play
+Recent stabilization and responsiveness work includes:
+- fixed session cross-talk between Minimax, Alpha-Beta, and AI-vs-AI sections
+- stopped Vercel websocket retry loops
+- reduced AI think delay by removing extra client fetches after turns
+- returned live state directly from move endpoints
+- moved end-of-game save work off the critical response path
+- improved AI-vs-AI pacing and hosted defaults
+- added state-version tracking so the frontend ignores unchanged snapshots
+- improved game-over modal reopening behavior
+- added hash-based section linking such as `#play-minimax` and `#aivai`
 
-## Features
+## API Overview
 
-- Per-session live gameplay
-- Real-time WebSocket board updates
-- Game-over modal with winner/draw handling
-- Algorithm comparison
-- Game history and replay
-- AI metrics
-- Q-learning persistence
-- AI vs AI simulation
+REST endpoints:
+- `GET /api/state`
+- `POST /api/start-game`
+- `POST /api/reset`
+- `POST /api/move`
+- `POST /api/ai-move`
+- `POST /api/ai-vs-ai`
+- `GET /api/suggest`
+- `POST /api/comparison`
+- `GET /api/history`
+- `GET /api/history/{id}`
+- `GET /api/stats`
+- `GET /api/learning-stats`
+- `GET /api/balance-stats`
+
+WebSocket endpoint:
+- `WS /api/ws`
+
+Live gameplay clients must send a stable `session_id` query parameter. The built-in frontend already does this automatically.
 
 ## Project Structure
 
 ```text
 Ai_project/
-├─ app.py
-├─ requirements.txt
 ├─ README.md
+├─ requirements.txt
 ├─ backend/
 │  ├─ app.py
 │  ├─ session_manager.py
@@ -144,16 +210,12 @@ Ai_project/
 │  ├─ script.js
 │  ├─ styles.css
 │  └─ assets/
+├─ docs/
+│  └─ screenshots/
 └─ data/
    ├─ games.db
    └─ learning_data.json
 ```
-
-## Requirements
-
-- Python 3.10+
-- pip
-- modern browser
 
 ## Installation
 
@@ -173,200 +235,52 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Run Locally
+## Testing Notes
 
-From the project root:
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
-```
-
-Then open:
-
-- `http://127.0.0.1:8000`
-- or `http://localhost:8000`
-
-## Development Run
-
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Use only one worker for this version.
-
-Do not run:
-
-```powershell
-uvicorn backend.app:app --workers 2
-```
-
-Why:
-- live sessions are in process memory
-- multiple workers would each have different in-memory session stores
-- users would get inconsistent live behavior
-
-## API Overview
-
-### REST
-
-- `GET /api/state`
-- `POST /api/start-game`
-- `POST /api/reset`
-- `POST /api/move`
-- `POST /api/ai-move`
-- `POST /api/ai-vs-ai`
-- `GET /api/suggest`
-- `POST /api/comparison`
-- `GET /api/history`
-- `GET /api/history/{id}`
-- `GET /api/stats`
-- `GET /api/learning-stats`
-- `GET /api/balance-stats`
-
-### WebSocket
-
-- `WS /api/ws`
-
-### Session Requirement
-
-Live gameplay endpoints use a `session_id` query parameter.
-
-Example:
-
-```text
-/api/start-game?session_id=sess-123
-```
-
-The frontend already does this automatically. If you build another client, you must send a stable `session_id` yourself.
-
-## Persistence
-
-### Stored Persistently
-- completed game history in `data/games.db`
-- Q-learning data in `data/learning_data.json`
-
-### Not Stored Persistently
-- active live boards
-- active AI-vs-AI runtime tasks
-- active WebSocket subscriptions
-
-## Concurrency Model
-
-The backend now uses:
-- one `GameSession` object per session id
-- one `asyncio.Lock` per session
-- one optional AI-vs-AI task per session
-- one WebSocket group per session
-
-This prevents:
-- all users seeing the same board
-- one user's move changing another user's game
-- one AI-vs-AI simulation overwriting another user's game
-
-## Deployment Guidance
-
-### Works Well For
-- localhost
-- single VPS
-- Render or Railway style single-instance deploys
-- internal demo environments
-
-### Recommended Minimum Deployment Stack
-- FastAPI app
-- one Uvicorn worker
-- reverse proxy like Nginx or Caddy
-- process manager or container restart policy
-
-### Recommended Command
-
-```bash
-python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000 --workers 1
-```
-
-## For Real Production Scale
-
-If you expect many real users, multiple devices, or multiple server instances, add these before calling it production-grade:
-
-- Redis for shared session storage
-- Redis pub/sub or a message broker for cross-instance WebSocket fanout
-- Postgres instead of local SQLite
-- background job queue for long AI work
-- session expiry and cleanup
-- rate limiting
-- structured logging
-- monitoring and alerts
-- reverse proxy timeouts and health checks
-- load testing
-- crash recovery strategy
-
-Without Redis or shared state, two separate app instances will not share live sessions.
+Verification performed during the recent stabilization pass included:
+- 12 repeated local test games
+- multiple AI-vs-AI strategy pairings
+- repeated Human-vs-AI flows
+- clean game-over completion checks
+- state version progression checks
+- production Vercel endpoint timing checks
 
 ## Troubleshooting
 
-### Localhost keeps loading forever
+### Localhost page keeps loading
 
-Likely causes:
-- old Python/Uvicorn process still running
-- more than one process bound to port `8000`
-- a stale hung server instance
-
-Check port usage:
+Check whether another process is already using port `8000`:
 
 ```powershell
 cmd /c netstat -ano | findstr :8000
 ```
 
-Kill a stuck process:
+Stop the stuck process:
 
 ```powershell
 taskkill /PID <pid> /F
 ```
 
-Start the app again:
+### Hosted AI-vs-AI still feels slow
 
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 127.0.0.1 --port 8000
-```
+Use the faster options in the AI-vs-AI speed selector:
+- `Instant (0.01s)`
+- `Fast (0.03s)`
+- `Balanced (0.05s)`
 
-### Popup not showing correctly
+### History behaves differently across hosting styles
 
-This was addressed in the current version. The UI now:
-- reacts from final state updates
-- avoids duplicate game-over modals
-- pushes result events earlier from the backend
+Localhost and single-instance hosting give the most predictable behavior because live sessions remain in one process.
 
-### Multiple users affecting the same game
+## Future Production Upgrade Path
 
-This should now be fixed if:
-- they are using different browsers or browser sessions
-- the frontend is sending a stable `session_id`
-
-If you build another client manually and omit `session_id`, sessions can collide.
-
-### App crashes under multi-instance deployment
-
-This version is not yet designed for shared live state across multiple server instances.
-Use Redis-backed session storage first.
-
-## Validation Notes
-
-The updated code was validated for:
-- backend Python compilation
-- frontend JavaScript syntax
-- session isolation between two different `session_id` values
-
-## Future Improvements
-
-- Redis-backed live sessions
-- Postgres migration
-- real user authentication
-- multiplayer room invites
-- spectating mode
-- stronger AI benchmarking tools
-- cleanup job for abandoned sessions
-- deployment Dockerfiles and Compose setup
-- CI tests for concurrent session behavior
+If this project needs true production-grade multi-instance reliability, add:
+- Redis for shared live session state
+- Postgres instead of local SQLite
+- cross-instance pub/sub for realtime fanout
+- background job handling for longer AI tasks
+- observability, rate limiting, and health checks
 
 ## License
 
-MIT
+This repository currently has no separate license file. Add one if you want to make usage terms explicit.

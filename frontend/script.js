@@ -223,6 +223,9 @@ const Nav = {
     if (page) page.classList.add('active');
     if (nav)  nav.classList.add('active');
     this.current = section;
+    if (location.hash !== `#${section}`) {
+      history.replaceState(null, '', `#${section}`);
+    }
     App.syncLiveSession(section);
 
     // Lazy-load section data
@@ -605,6 +608,7 @@ class PlaySection {
     this.gameOverShown    = false;
     this.pollTimer        = null;
     this.hasStarted       = false;
+    this.lastStateVersion = null;
     this._wsHandler  = null;
     this._wsMetrics  = null;
     this._wsGameOver = null;
@@ -805,6 +809,7 @@ class PlaySection {
     this.aiLocked = false;
     this.aiRequestInFlight = false;  // reset to prevent stuck-AI state on new game
     this.gameOverShown = false;
+    this.lastStateVersion = null;
 
     if (this.board) { this.board.onLineClick = null; }
 
@@ -843,6 +848,7 @@ class PlaySection {
     this.aiLocked = false;
     this.aiRequestInFlight = false;
     this.gameOverShown = false;
+    this.lastStateVersion = null;
     try {
       const res = await API.post('/reset', {}, { sessionId: this.sessionId });
       const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
@@ -857,6 +863,9 @@ class PlaySection {
   _onState(state, prefix) {
     // Only update if this section is active
     if (!document.getElementById(`section-play-${this.strategy}`).classList.contains('active')) return;
+    const version = state?.state_version;
+    if (version !== undefined && version === this.lastStateVersion) return;
+    if (version !== undefined) this.lastStateVersion = version;
 
     if (!this.board) {
       this.board = new GameBoard(`${prefix}-grid`, {
@@ -1058,6 +1067,7 @@ const AiVsAi = {
   gameOverShown: false,
   pollTimer: null,
   sessionId: getScopedSessionId('aivai'),
+  lastStateVersion: null,
 
   init() {
     $('btn-aivai-start').onclick = () => this.start();
@@ -1121,6 +1131,7 @@ const AiVsAi = {
     $('aivai-score2').textContent = '0';
     $('aivai-log').innerHTML = '';
     this.gameOverShown = false;
+    this.lastStateVersion = null;
 
     // Reset the live nodes-per-move chart for this new session
     ChartMgr.resetHistoryChart();
@@ -1153,6 +1164,7 @@ const AiVsAi = {
       $('aivai-log').innerHTML = '';
       this.running = false;
       this.gameOverShown = false;
+      this.lastStateVersion = null;
       this.stopPolling();
     } catch (e) {
       Toast.show('Reset failed', 'error');
@@ -1161,6 +1173,9 @@ const AiVsAi = {
 
   _onState(state) {
     if (!$('section-aivai').classList.contains('active')) return;
+    const version = state?.state_version;
+    if (version !== undefined && version === this.lastStateVersion) return;
+    if (version !== undefined) this.lastStateVersion = version;
 
     if (!this.board) {
       this.board = new GameBoard('aivai-grid', { readOnly: true });
@@ -1220,6 +1235,7 @@ const AiVsAi = {
     Modal.show(scores, winner, () => this.start(), 'aivai');
     if (winner !== 0) launchConfetti();
     this.running = false;
+    this.stopPolling();
   },
 
   _winnerFromScores(scores) {
@@ -1488,7 +1504,10 @@ const Modal = {
     $('modal-p1-score').textContent  = p1;
     $('modal-p2-score').textContent  = p2;
 
-    $('modal-gameover').classList.add('open');
+    const modal = $('modal-gameover');
+    modal.classList.remove('open');
+    void modal.offsetWidth;
+    modal.classList.add('open');
   },
 
   hide() {
@@ -1565,7 +1584,13 @@ const App = {
 
     // Dashboard — single load on init
     Dashboard.load();
-    this.syncLiveSession(Nav.current);
+    const hashSection = location.hash ? location.hash.slice(1) : '';
+    const validSections = new Set(['dashboard', 'play-minimax', 'play-alphabeta', 'aivai', 'comparison', 'history']);
+    if (validSections.has(hashSection) && hashSection !== Nav.current) {
+      Nav.go(hashSection);
+    } else {
+      this.syncLiveSession(Nav.current);
+    }
   },
 };
 

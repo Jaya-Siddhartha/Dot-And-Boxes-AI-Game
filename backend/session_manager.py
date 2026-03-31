@@ -34,6 +34,7 @@ class GameSession:
             "moves": [],
             "move_num": 0,
             "game_saved": False,
+            "state_version": 0,
         }
         self.touch()
 

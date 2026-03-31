@@ -103,10 +103,21 @@ async def _cancel_aivai_task(session: GameSession) -> None:
     session.aivai_task = None
 
 
+def _state_payload(session: GameSession) -> dict:
+    payload = session.game_state.get_state_dict()
+    payload["state_version"] = session.session_meta.get("state_version", 0)
+    return payload
+
+
+def _bump_state_version(session: GameSession) -> int:
+    meta = session.session_meta
+    next_version = int(meta.get("state_version", 0)) + 1
+    meta["state_version"] = next_version
+    return next_version
+
+
 async def push_state(session: GameSession) -> None:
-    await session_manager.broadcast(
-        session, {"type": "state", "data": session.game_state.get_state_dict()}
-    )
+    await session_manager.broadcast(session, {"type": "state", "data": _state_payload(session)})
 
 
 async def push_metrics(session: GameSession, metrics: dict) -> None:
@@ -232,7 +243,7 @@ async def ws_endpoint(
     await websocket.accept()
     await session_manager.register_ws(session, websocket)
     try:
-        await websocket.send_json({"type": "state", "data": session.game_state.get_state_dict()})
+        await websocket.send_json({"type": "state", "data": _state_payload(session)})
         while True:
             await websocket.receive_text()
     except (WebSocketDisconnect, Exception):
@@ -242,7 +253,7 @@ async def ws_endpoint(
 @router.get("/state")
 async def get_state(session_id: Optional[str] = Query(default=None)):
     session = await _get_session(session_id)
-    return session.game_state.get_state_dict()
+    return _state_payload(session)
 
 
 @router.post("/start-game")
@@ -254,6 +265,7 @@ async def start_game(req: StartGameReq, session_id: Optional[str] = Query(defaul
         cols = max(3, min(6, req.cols))
         session.game_state = GameState(rows=rows, cols=cols)
         session.reset_meta(req.mode, req.strategy, req.difficulty)
+        _bump_state_version(session)
         await push_state(session)
         return {
             "status": "success",
@@ -263,7 +275,7 @@ async def start_game(req: StartGameReq, session_id: Optional[str] = Query(defaul
             "strategy": req.strategy,
             "difficulty": req.difficulty,
             "session_id": session.session_id,
-            "state": session.game_state.get_state_dict(),
+            "state": _state_payload(session),
         }
 
 
@@ -278,11 +290,12 @@ async def reset_game(session_id: Optional[str] = Query(default=None)):
         meta["move_num"] = 0
         meta["started_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         meta["game_saved"] = False
+        _bump_state_version(session)
         await push_state(session)
         return {
             "status": "success",
             "session_id": session.session_id,
-            "state": session.game_state.get_state_dict(),
+            "state": _state_payload(session),
         }
 
 
@@ -311,10 +324,11 @@ async def human_move(move: MoveReq, session_id: Optional[str] = Query(default=No
                     "move_c": move.c,
                 }
             )
+            _bump_state_version(session)
             await push_state(session)
             if state.is_game_over:
                 await _end_game(session)
-            return {"status": "success", "state": state.get_state_dict()}
+            return {"status": "success", "state": _state_payload(session)}
         except (InvalidMoveError, GameStateError) as e:
             return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
         except Exception as e:
@@ -415,6 +429,7 @@ async def ai_move(req: AIMoveReq, session_id: Optional[str] = Query(default=None
             }
         )
 
+        _bump_state_version(session)
         await push_metrics(session, metrics)
         await push_state(session)
         if state.is_game_over:
@@ -423,7 +438,7 @@ async def ai_move(req: AIMoveReq, session_id: Optional[str] = Query(default=None
             "status": "success",
             "move": best_move,
             "metrics": metrics,
-            "state": state.get_state_dict(),
+            "state": _state_payload(session),
             "depth_used": depth,
         }
 
@@ -437,6 +452,7 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
         cols = max(3, min(6, req.cols))
         session.game_state = GameState(rows=rows, cols=cols)
         session.reset_meta("aivai", f"{req.strat1}_vs_{req.strat2}", "hard")
+        _bump_state_version(session)
         await push_state(session)
 
         async def run() -> None:
@@ -519,6 +535,7 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
                             }
                         )
 
+                        _bump_state_version(session)
                         await push_metrics(session, met)
                         await push_state(session)
                         game_over = state.is_game_over
@@ -543,7 +560,7 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
             "message": "AI vs AI game running.",
             "grid": f"{rows}x{cols}",
             "session_id": session.session_id,
-            "state": session.game_state.get_state_dict(),
+            "state": _state_payload(session),
         }
 
 
