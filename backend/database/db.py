@@ -11,13 +11,21 @@ New in v2:
 import aiosqlite
 import json
 import os
+import tempfile
 from datetime import datetime
 
-DB_PATH = "data/games.db"
+
+def _resolve_data_dir() -> str:
+    if os.getenv("VERCEL"):
+        return os.path.join(tempfile.gettempdir(), "dots_boxes_data")
+    return "data"
+
+
+DB_PATH = os.path.join(_resolve_data_dir(), "games.db")
 
 
 async def get_db() -> aiosqlite.Connection:
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     return db
@@ -25,7 +33,7 @@ async def get_db() -> aiosqlite.Connection:
 
 async def init_db() -> None:
     """Create tables if they don't exist yet."""
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS games (

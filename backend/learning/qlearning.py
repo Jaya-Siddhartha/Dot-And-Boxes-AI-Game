@@ -38,11 +38,11 @@ class QLearner:
 
     def __init__(
         self,
-        data_file:  str   = "data/learning_data.json",
+        data_file:  Optional[str] = None,
         alpha:      float = 0.15,   # learning rate
         gamma:      float = 0.90,   # discount factor
     ):
-        self.data_file    = data_file
+        self.data_file    = data_file or self._default_data_file()
         self.alpha        = alpha
         self.gamma        = gamma
         self.games_played = 0
@@ -52,6 +52,14 @@ class QLearner:
         self.q_table: Dict[int, Dict[str, Dict[str, float]]] = {1: {}, 2: {}}
 
         self.load_data()
+
+    @staticmethod
+    def _default_data_file() -> str:
+        if os.getenv("VERCEL"):
+            base_dir = os.path.join(tempfile.gettempdir(), "dots_boxes_data")
+        else:
+            base_dir = "data"
+        return os.path.join(base_dir, "learning_data.json")
 
     # ------------------------------------------------------------------
     # Epsilon-greedy — decays over time

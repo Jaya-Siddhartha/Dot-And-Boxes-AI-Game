@@ -121,6 +121,28 @@ def _winner_for_state(state: GameState) -> int:
     return 1 if p1 > p2 else (2 if p2 > p1 else 0)
 
 
+async def _persist_finished_game(snapshot: dict) -> None:
+    try:
+        await save_game(
+            mode=snapshot["mode"],
+            strategy=snapshot["strategy"],
+            rows=snapshot["rows"],
+            cols=snapshot["cols"],
+            winner=snapshot["winner"],
+            score_p1=snapshot["score_p1"],
+            score_p2=snapshot["score_p2"],
+            moves_data=snapshot["moves"],
+            started_at=snapshot["started_at"],
+        )
+    except Exception as e:
+        print(f"[DB] Failed to save game for session {snapshot['session_id']}: {e}")
+
+    try:
+        await asyncio.to_thread(qlearner.save_data)
+    except Exception as e:
+        print(f"[Q] Failed to save Q-table: {e}")
+
+
 async def _end_game(session: GameSession) -> None:
     meta = session.session_meta
     if meta.get("game_saved"):
@@ -147,25 +169,19 @@ async def _end_game(session: GameSession) -> None:
         },
     )
 
-    try:
-        await save_game(
-            mode=meta["mode"],
-            strategy=meta["strategy"],
-            rows=state.rows,
-            cols=state.cols,
-            winner=winner,
-            score_p1=p1,
-            score_p2=p2,
-            moves_data=meta["moves"],
-            started_at=meta["started_at"],
-        )
-    except Exception as e:
-        print(f"[DB] Failed to save game for session {session.session_id}: {e}")
-
-    try:
-        qlearner.save_data()
-    except Exception as e:
-        print(f"[Q] Failed to save Q-table: {e}")
+    snapshot = {
+        "session_id": session.session_id,
+        "mode": meta["mode"],
+        "strategy": meta["strategy"],
+        "rows": state.rows,
+        "cols": state.cols,
+        "winner": winner,
+        "score_p1": p1,
+        "score_p2": p2,
+        "moves": [dict(move) for move in meta["moves"]],
+        "started_at": meta["started_at"],
+    }
+    asyncio.create_task(_persist_finished_game(snapshot))
 
 
 @router.websocket("/ws")

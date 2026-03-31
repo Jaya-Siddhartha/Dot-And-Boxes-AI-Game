@@ -11,6 +11,8 @@ const CELL_PX  = 70;   // pixels between dots
 const DOT_R    = 6.5;  // half dot-size
 const BROWSER_SESSION_KEY = 'dots_boxes_browser_id';
 const IS_VERCEL_HOST = location.hostname.endsWith('.vercel.app');
+const PLAY_POLL_MS = 5000;
+const AIVAI_POLL_MS = 700;
 
 function getBrowserSessionId() {
   let sessionId = localStorage.getItem(BROWSER_SESSION_KEY);
@@ -132,6 +134,13 @@ const WS = {
   connect(sessionId = null) {
     if (sessionId) this.sessionId = sessionId;
     if (!this.sessionId) this.sessionId = getScopedSessionId('dashboard');
+    if (IS_VERCEL_HOST) {
+      const dot = $('conn-dot');
+      const lbl = $('conn-label');
+      if (dot) dot.classList.add('connected');
+      if (lbl) lbl.textContent = 'Polling mode';
+      return;
+    }
     if (this.socket && this.socket.readyState < 2) return;
     try {
       this.socket = new WebSocket(getWsUrl(this.sessionId));
@@ -153,6 +162,7 @@ const WS = {
   },
 
   _onClose() {
+    if (IS_VERCEL_HOST) return;
     const dot = $('conn-dot');
     const lbl = $('conn-label');
     dot.classList.remove('connected');
@@ -776,8 +786,7 @@ class PlaySection {
         this._onState(state, prefix);
       } catch {}
     };
-    if (IS_VERCEL_HOST) tick();
-    this.pollTimer = setInterval(tick, IS_VERCEL_HOST ? 1200 : 2500);
+    this.pollTimer = setInterval(tick, PLAY_POLL_MS);
   }
 
   stopPolling() {
@@ -1079,14 +1088,14 @@ const AiVsAi = {
   startPolling() {
     if (this.pollTimer) return;
     const tick = async () => {
-      if (!$('section-aivai')?.classList.contains('active')) return;
+      if (!$('section-aivai')?.classList.contains('active') || !this.running) return;
       try {
         const state = await API.get('/state', { sessionId: this.sessionId });
         this._onState(state);
       } catch {}
     };
     if (IS_VERCEL_HOST) tick();
-    this.pollTimer = setInterval(tick, IS_VERCEL_HOST ? 1200 : 2500);
+    this.pollTimer = setInterval(tick, AIVAI_POLL_MS);
   },
 
   stopPolling() {
@@ -1125,6 +1134,7 @@ const AiVsAi = {
     try {
       await API.post('/ai-vs-ai', { strat1, strat2, depth, delay, rows, cols }, { sessionId: this.sessionId });
       this.running = true;
+      this.startPolling();
       Toast.show('⚔️ AI Battle started!', 'success');
     } catch (e) {
       Toast.show('Failed to start AI vs AI: ' + e.message, 'error');
@@ -1144,6 +1154,7 @@ const AiVsAi = {
       $('aivai-log').innerHTML = '';
       this.running = false;
       this.gameOverShown = false;
+      this.stopPolling();
     } catch (e) {
       Toast.show('Reset failed', 'error');
     }
@@ -1173,6 +1184,7 @@ const AiVsAi = {
       Modal.show(state.scores || {}, winner, () => this.start(), 'aivai');
       if (winner !== 0) launchConfetti();
       this.running = false;
+      this.stopPolling();
     }
   },
 
@@ -1503,14 +1515,14 @@ const App = {
   syncLiveSession(section) {
     if (section === 'play-minimax' && PlaySections.mm) {
       WS.setSession(PlaySections.mm.sessionId);
-      PlaySections.mm.startPolling();
+      PlaySections.mm.stopPolling();
       PlaySections.ab?.stopPolling();
       AiVsAi.stopPolling();
       return;
     }
     if (section === 'play-alphabeta' && PlaySections.ab) {
       WS.setSession(PlaySections.ab.sessionId);
-      PlaySections.ab.startPolling();
+      PlaySections.ab.stopPolling();
       PlaySections.mm?.stopPolling();
       AiVsAi.stopPolling();
       return;
