@@ -79,7 +79,7 @@ class AiVsAiReq(BaseModel):
     strat1: str = "minimax"
     strat2: str = "alphabeta"
     depth: int = 3
-    delay: float = Field(default=0.5, ge=0.05, le=2.0)
+    delay: float = Field(default=0.15, ge=0.01, le=1.0)
     rows: int = 4
     cols: int = 4
 
@@ -501,7 +501,7 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
 
                     if game_over:
                         break
-                    await asyncio.sleep(max(0.05, min(req.delay, 2.0)))
+                    await asyncio.sleep(max(0.01, min(req.delay, 1.0)))
             except asyncio.CancelledError:
                 pass
             except Exception as e:

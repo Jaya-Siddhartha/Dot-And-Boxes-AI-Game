@@ -12,7 +12,7 @@ const DOT_R    = 6.5;  // half dot-size
 const BROWSER_SESSION_KEY = 'dots_boxes_browser_id';
 const IS_VERCEL_HOST = location.hostname.endsWith('.vercel.app');
 const PLAY_POLL_MS = 5000;
-const AIVAI_POLL_MS = 700;
+const AIVAI_POLL_MS = 250;
 
 function getBrowserSessionId() {
   let sessionId = localStorage.getItem(BROWSER_SESSION_KEY);
