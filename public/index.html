@@ -217,7 +217,7 @@
             <div class="agent-card agent2">
               <div class="agent-name">Agent 2 (Red)</div>
               <div class="agent-score" id="aivai-score2">0</div>
-              <div class="agent-strategy" id="aivai-strat2">Adaptive</div>
+              <div class="agent-strategy" id="aivai-strat2">Minimax</div>
             </div>
           </div>
 
@@ -255,9 +255,9 @@
               <div class="form-group">
                 <label class="form-label">Agent 2 Strategy</label>
                 <select class="select-ctrl" id="aivai-strat2-sel">
-                  <option value="minimax">Minimax</option>
+                  <option value="minimax" selected>Minimax</option>
                   <option value="alphabeta">Alpha-Beta</option>
-                  <option value="adaptive" selected>Adaptive (Q-Learning)</option>
+                  <option value="adaptive">Adaptive (Q-Learning)</option>
                 </select>
               </div>
               <div class="form-group">
@@ -281,9 +281,9 @@
               <div class="form-group">
                 <label class="form-label">Speed (delay)</label>
                 <select class="select-ctrl" id="aivai-delay">
-                  <option value="0.01">Instant (0.01s)</option>
+                  <option value="0.01" selected>Instant (0.01s)</option>
                   <option value="0.03">Fast (0.03s)</option>
-                  <option value="0.05" selected>Balanced (0.05s)</option>
+                  <option value="0.05">Balanced (0.05s)</option>
                   <option value="0.1">Smooth (0.1s)</option>
                   <option value="0.2">Slow (0.2s)</option>
                 </select>

@@ -12,9 +12,9 @@ const DOT_R    = 6.5;  // half dot-size
 const BROWSER_SESSION_KEY = 'dots_boxes_browser_id';
 const IS_VERCEL_HOST = location.hostname.endsWith('.vercel.app');
 const PLAY_POLL_MS = IS_VERCEL_HOST ? 15000 : 6000;
-const AIVAI_POLL_MS = IS_VERCEL_HOST ? 180 : 120;
+const AIVAI_POLL_MS = IS_VERCEL_HOST ? 110 : 90;
 const AIVAI_HIDDEN_POLL_MS = IS_VERCEL_HOST ? 1200 : 700;
-const AI_OVERLAY_DELAY_MS = 140;
+const AI_OVERLAY_DELAY_MS = 260;
 
 function getBrowserSessionId() {
   let sessionId = localStorage.getItem(BROWSER_SESSION_KEY);
@@ -1281,7 +1281,7 @@ class PlaySection {
               $(`section-play-${this.strategy}`).classList.contains('active')) {
             this._triggerAI();
           }
-        }, 60); // Keep chained AI turns feeling responsive
+        }, 24); // Keep chained AI turns feeling responsive
       } else {
         this.aiLocked = false;
       }

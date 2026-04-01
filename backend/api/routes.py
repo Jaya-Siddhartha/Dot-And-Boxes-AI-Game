@@ -43,7 +43,7 @@ qlearner = QLearner()
 fairness_ctrl = FairnessController()
 
 _IS_VERCEL = bool(os.getenv("VERCEL"))
-_AI_TIMEOUT_SECONDS = 1.2 if _IS_VERCEL else 6.0
+_AI_TIMEOUT_SECONDS = 0.85 if _IS_VERCEL else 4.0
 _DEPTH_MAP = {
     1: DIFFICULTY_EASY,
     2: DIFFICULTY_MEDIUM,
@@ -76,10 +76,10 @@ class AIMoveReq(BaseModel):
 
 
 class AiVsAiReq(BaseModel):
-    strat1: str = "minimax"
-    strat2: str = "alphabeta"
+    strat1: str = "alphabeta"
+    strat2: str = "minimax"
     depth: int = 3
-    delay: float = Field(default=0.15, ge=0.01, le=1.0)
+    delay: float = Field(default=0.01, ge=0.01, le=1.0)
     rows: int = 4
     cols: int = 4
 
@@ -145,17 +145,17 @@ def _effective_depth(state: GameState, requested_depth: int, difficulty: str, st
     if strategy == "minimax":
         if remaining_moves >= 18:
             return 1
-        if remaining_moves >= 10:
+        if remaining_moves >= 8:
             return min(depth, 1)
-        if remaining_moves >= 5:
+        if remaining_moves >= 4:
             return min(depth, 2)
         return min(depth, 3)
 
-    if remaining_moves >= 18:
+    if remaining_moves >= 16:
         return 1
-    if remaining_moves >= 10:
+    if remaining_moves >= 8:
         return min(depth, 1)
-    if remaining_moves >= 5:
+    if remaining_moves >= 4:
         return min(depth, 2)
     return min(depth, 3)
 
@@ -165,11 +165,11 @@ def _effective_aivai_depth(state: GameState, requested_depth: int) -> int:
     remaining_moves = len(state.get_valid_moves())
 
     if _IS_VERCEL:
-        if remaining_moves >= 18:
+        if remaining_moves >= 14:
             return 1
-        if remaining_moves >= 8:
+        if remaining_moves >= 6:
             return min(depth, 1)
-        if remaining_moves >= 4:
+        if remaining_moves >= 3:
             return min(depth, 2)
         return min(depth, 3)
 
@@ -180,7 +180,7 @@ def _effective_aivai_depth(state: GameState, requested_depth: int) -> int:
 
 def _effective_aivai_delay(delay: float) -> float:
     if _IS_VERCEL:
-        return max(0.0, min(delay, 0.01))
+        return max(0.0, min(delay, 0.005))
     return max(0.01, min(delay, 0.5))
 
 
@@ -712,19 +712,19 @@ async def suggest_move(
             return {"status": "error", "message": "Game over."}
         if not state.get_valid_moves():
             return {"status": "error", "message": "No valid moves."}
-        ai = AlphaBetaStrategy(time_limit=3.0)
+        ai = AlphaBetaStrategy(time_limit=0.75 if _IS_VERCEL else 2.0)
         state_clone = state.clone()
 
     try:
         move, score, metrics = await asyncio.wait_for(
             asyncio.to_thread(ai.compute_move, state_clone, depth),
-            timeout=5.0,
+            timeout=_AI_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
         async with session.lock:
             valid = session.game_state.get_valid_moves()
         move = valid[0] if valid else None
-        score, metrics = 0.0, {"time": 5.0, "nodes": 0, "pruned": 0}
+        score, metrics = 0.0, {"time": _AI_TIMEOUT_SECONDS, "nodes": 0, "pruned": 0}
 
     return {"status": "success", "move": move, "score": score, "metrics": metrics}
 
@@ -743,7 +743,7 @@ async def comparison(req: CompareReq, session_id: Optional[str] = Query(default=
         state_clone_ab = state.clone()
 
     mm = MinimaxStrategy()
-    ab = AlphaBetaStrategy(time_limit=5.0)
+    ab = AlphaBetaStrategy(time_limit=0.9 if _IS_VERCEL else 3.0)
     total_time_start = time.perf_counter()
     try:
         (
