@@ -38,7 +38,7 @@ DIFFICULTY_EXPERT = "expert"
 
 _DIFFICULTY_DEPTH = {
     DIFFICULTY_EASY:   1,
-    DIFFICULTY_MEDIUM: 3,
+    DIFFICULTY_MEDIUM: 2,
     DIFFICULTY_HARD:   5,
     DIFFICULTY_EXPERT: 7,
 }
@@ -425,7 +425,7 @@ class AdaptiveLearningStrategy(Strategy):
             }
 
         if depth is None:
-            depth = 5
+            depth = 2
 
         state_key = self.qlearner.get_state_key(state)
         scored    = []
@@ -526,4 +526,4 @@ def create_strategy(name: str, difficulty: str = DIFFICULTY_HARD,
 
 
 def get_depth_for_difficulty(difficulty: str) -> int:
-    return _DIFFICULTY_DEPTH.get(difficulty.lower(), 5)
+    return _DIFFICULTY_DEPTH.get(difficulty.lower(), 2)

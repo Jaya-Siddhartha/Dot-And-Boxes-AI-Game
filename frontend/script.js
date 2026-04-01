@@ -215,10 +215,22 @@ const Nav = {
 
   init() {
     document.querySelectorAll('.nav-item[data-section]').forEach(item => {
-      item.addEventListener('click', () => this.go(item.dataset.section));
+      item.addEventListener('pointerup', e => {
+        e.preventDefault();
+        this.go(item.dataset.section);
+      });
+      item.addEventListener('click', e => e.preventDefault());
     });
-    $('mobile-menu-btn')?.addEventListener('click', () => this.toggleSidebar());
-    $('sidebar-backdrop')?.addEventListener('click', () => this.closeSidebar());
+    $('mobile-menu-btn')?.addEventListener('pointerup', e => {
+      e.preventDefault();
+      this.toggleSidebar();
+    });
+    $('mobile-menu-btn')?.addEventListener('click', e => e.preventDefault());
+    $('sidebar-backdrop')?.addEventListener('pointerup', e => {
+      e.preventDefault();
+      this.closeSidebar();
+    });
+    $('sidebar-backdrop')?.addEventListener('click', e => e.preventDefault());
     window.addEventListener('resize', () => {
       if (window.innerWidth > 768) this.closeSidebar(true);
     });
@@ -677,7 +689,7 @@ class PlaySection {
     this.strategy         = strategy;  // 'minimax' | 'alphabeta'
     this.sessionId        = getScopedSessionId(`play-${strategy}`);
     this.mode             = 'hvai';    // hvh | hvai
-    this.depth            = 3;
+    this.depth            = 2;
     this.rows             = 4;
     this.cols             = 4;
     this.board            = null;
@@ -687,6 +699,7 @@ class PlaySection {
     this.gameOverShown    = false;
     this.pollTimer        = null;
     this.pollInFlight     = false;
+    this.pollEnabled      = false;
     this.hasStarted       = false;
     this.lastStateVersion = null;
     this._wsHandler  = null;
@@ -730,8 +743,8 @@ class PlaySection {
               <label class="form-label">AI Depth</label>
               <div class="diff-pills" id="${prefix}-depth-pills">
                 <span class="diff-pill" data-val="1">1</span>
-                <span class="diff-pill" data-val="2">2</span>
-                <span class="diff-pill active" data-val="3">3</span>
+                <span class="diff-pill active" data-val="2">2</span>
+                <span class="diff-pill" data-val="3">3</span>
                 <span class="diff-pill" data-val="4">4</span>
               </div>
             </div>
@@ -832,12 +845,21 @@ class PlaySection {
   }
 
   _wire(prefix) {
-    $(`${prefix}-btn-new`).onclick = () => this._startGame();
-    $(`${prefix}-reset`).onclick   = () => this._reset();
-    $(`${prefix}-suggest`).onclick  = () => this._suggest();
-    $(`${prefix}-clear-sug`).onclick= () => {
-      if (this.board) this.board.clearSuggestion();
+    const bindTap = (id, handler) => {
+      const node = $(id);
+      if (!node) return;
+      node.addEventListener('pointerup', e => {
+        e.preventDefault();
+        handler();
+      });
+      node.addEventListener('click', e => e.preventDefault());
     };
+    bindTap(`${prefix}-btn-new`, () => this._startGame());
+    bindTap(`${prefix}-reset`, () => this._reset());
+    bindTap(`${prefix}-suggest`, () => this._suggest());
+    bindTap(`${prefix}-clear-sug`, () => {
+      if (this.board) this.board.clearSuggestion();
+    });
 
     // Depth pills
     document.querySelectorAll(`#${prefix}-depth-pills .diff-pill`).forEach(pill => {
@@ -862,26 +884,38 @@ class PlaySection {
   }
 
   startPolling() {
-    if (this.pollTimer) return;
+    if (this.pollEnabled) return;
+    this.pollEnabled = true;
     const tick = async () => {
+      if (!this.pollEnabled) {
+        this.pollTimer = null;
+        return;
+      }
+      const sectionActive = document.getElementById(`section-play-${this.strategy}`)?.classList.contains('active');
+      const shouldFetch = sectionActive && isDocumentVisible();
       if (this.pollInFlight) return;
-      if (!document.getElementById(`section-play-${this.strategy}`)?.classList.contains('active')) return;
-      if (!isDocumentVisible()) return;
-      this.pollInFlight = true;
+      if (shouldFetch) this.pollInFlight = true;
       try {
-        const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
-        const state = await API.get('/state', { sessionId: this.sessionId });
-        this._onState(state, prefix);
+        if (shouldFetch) {
+          const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
+          const state = await API.get('/state', { sessionId: this.sessionId });
+          this._onState(state, prefix);
+        }
       } catch {}
       finally {
         this.pollInFlight = false;
-        this.pollTimer = setTimeout(tick, PLAY_POLL_MS);
+        if (this.pollEnabled) {
+          this.pollTimer = setTimeout(tick, PLAY_POLL_MS);
+        } else {
+          this.pollTimer = null;
+        }
       }
     };
     tick();
   }
 
   stopPolling() {
+    this.pollEnabled = false;
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
     }
@@ -891,6 +925,7 @@ class PlaySection {
 
   async _startGame() {
     const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
+    this.stopPolling();
     this.mode = $(`${prefix}-mode`).value;
     this.rows = parseInt($(`${prefix}-grid-size`).value);
     this.cols = this.rows;
@@ -925,6 +960,7 @@ class PlaySection {
         strategy: this.strategy,
       }, { sessionId: this.sessionId });
       this.hasStarted = true;
+      this.startPolling();
       const state = res.state || await API.get('/state', { sessionId: this.sessionId });
       this._onState(state, prefix);
       this._addLog('sys', '⬡ New game started');
@@ -935,6 +971,7 @@ class PlaySection {
 
   async _reset() {
     Modal.hide();
+    this.stopPolling();
     this.log = [];
     this.aiLocked = false;
     this.aiRequestInFlight = false;
@@ -946,6 +983,7 @@ class PlaySection {
       const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
       const state = res.state || await API.get('/state', { sessionId: this.sessionId });
       this._onState(state, prefix);
+      this.startPolling();
       this._addLog('sys', '↺ Board reset');
     } catch (e) {
       Toast.show('Reset failed: ' + e.message, 'error');
@@ -1181,12 +1219,22 @@ const AiVsAi = {
   gameOverShown: false,
   pollTimer: null,
   pollInFlight: false,
+  pollEnabled: false,
   sessionId: getScopedSessionId('aivai'),
   lastStateVersion: null,
 
   init() {
-    $('btn-aivai-start').onclick = () => this.start();
-    $('btn-aivai-reset').onclick = () => this.reset();
+    const bindTap = (id, handler) => {
+      const node = $(id);
+      if (!node) return;
+      node.addEventListener('pointerup', e => {
+        e.preventDefault();
+        handler();
+      });
+      node.addEventListener('click', e => e.preventDefault());
+    };
+    bindTap('btn-aivai-start', () => this.start());
+    bindTap('btn-aivai-reset', () => this.reset());
 
     // Depth pills
     document.querySelectorAll('#aivai-depth-pills .diff-pill').forEach(p => {
@@ -1210,25 +1258,38 @@ const AiVsAi = {
   },
 
   startPolling() {
-    if (this.pollTimer) return;
+    if (this.pollEnabled) return;
+    this.pollEnabled = true;
     const tick = async () => {
+      if (!this.pollEnabled) {
+        this.pollTimer = null;
+        return;
+      }
+      const sectionActive = $('section-aivai')?.classList.contains('active');
+      const shouldFetch = sectionActive && this.running && isDocumentVisible();
       if (this.pollInFlight) return;
-      if (!$('section-aivai')?.classList.contains('active') || !this.running) return;
-      this.pollInFlight = true;
+      if (shouldFetch) this.pollInFlight = true;
       try {
-        const state = await API.get('/state', { sessionId: this.sessionId });
-        this._onState(state);
+        if (shouldFetch) {
+          const state = await API.get('/state', { sessionId: this.sessionId });
+          this._onState(state);
+        }
       } catch {}
       finally {
         this.pollInFlight = false;
-        const delay = isDocumentVisible() ? AIVAI_POLL_MS : AIVAI_HIDDEN_POLL_MS;
-        this.pollTimer = setTimeout(tick, delay);
+        if (this.pollEnabled) {
+          const delay = isDocumentVisible() ? AIVAI_POLL_MS : AIVAI_HIDDEN_POLL_MS;
+          this.pollTimer = setTimeout(tick, delay);
+        } else {
+          this.pollTimer = null;
+        }
       }
     };
     tick();
   },
 
   stopPolling() {
+    this.pollEnabled = false;
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
     }
@@ -1238,10 +1299,12 @@ const AiVsAi = {
 
   async start() {
     Modal.hide();
+    this.stopPolling();
+    this.running = false;
     const strat1 = $('aivai-strat1-sel').value;
     const strat2 = $('aivai-strat2-sel').value;
     const active = document.querySelector('#aivai-depth-pills .diff-pill.active');
-    const rawDepth = active ? parseInt(active.dataset.val) : 1;
+    const rawDepth = active ? parseInt(active.dataset.val) : 2;
     const depth  = IS_VERCEL_HOST ? Math.min(rawDepth, 2) : rawDepth;
     const rawDelay  = parseFloat($('aivai-delay').value);
     const delay  = IS_VERCEL_HOST ? Math.min(rawDelay, 0.05) : rawDelay;
@@ -1255,6 +1318,7 @@ const AiVsAi = {
     $('aivai-log').innerHTML = '';
     this.gameOverShown = false;
     this.lastStateVersion = null;
+    this.pollInFlight = false;
 
     // Reset the live nodes-per-move chart for this new session
     ChartMgr.resetHistoryChart();
@@ -1278,6 +1342,7 @@ const AiVsAi = {
   async reset() {
     try {
       Modal.hide();
+      this.stopPolling();
       const res = await API.post('/reset', {}, { sessionId: this.sessionId });
       if (res.state) {
         this._onState(res.state);
@@ -1288,7 +1353,7 @@ const AiVsAi = {
       this.running = false;
       this.gameOverShown = false;
       this.lastStateVersion = null;
-      this.stopPolling();
+      this.pollInFlight = false;
     } catch (e) {
       Toast.show('Reset failed', 'error');
     }
@@ -1655,7 +1720,7 @@ const App = {
   syncLiveSession(section) {
     if (section === 'play-minimax' && PlaySections.mm) {
       WS.setSession(PlaySections.mm.sessionId);
-      PlaySections.mm.stopPolling();
+      PlaySections.mm.startPolling();
       PlaySections.ab?.stopPolling();
       AiVsAi.stopPolling();
       if (!PlaySections.mm.hasStarted) {
@@ -1665,7 +1730,7 @@ const App = {
     }
     if (section === 'play-alphabeta' && PlaySections.ab) {
       WS.setSession(PlaySections.ab.sessionId);
-      PlaySections.ab.stopPolling();
+      PlaySections.ab.startPolling();
       PlaySections.mm?.stopPolling();
       AiVsAi.stopPolling();
       if (!PlaySections.ab.hasStarted) {
